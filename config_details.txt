@@ -1,0 +1,100 @@
+================================================================================
+JOINT SUPERVISED-SSL (ViT + MAE) EXPERIMENT CONFIGURATION
+================================================================================
+Model Name          : JointViTMAE (Joint Supervised + Masked Autoencoder)
+Target Dataset      : Custom Image Classification (16 Classes, 2,400 Total Samples)
+Framework           : PyTorch 2.11.0+cu130 (CUDA / NVIDIA A100 GPU)
+Random Seed         : 0 (Applied to Python, NumPy, PyTorch CPU/CUDA)
+
+--------------------------------------------------------------------------------
+1. DATASET & DATA PIPELINE CONFIGURATION
+--------------------------------------------------------------------------------
+Total Dataset Size   : 2,400 samples
+Train / Val Split    : 80% / 20% (1,920 train, 480 validation)
+Number of Classes    : 16
+Input Image Size     : 224 x 224 pixels
+Batch Size           : 64
+DataLoader Workers   : 2
+Pin Memory           : Enabled
+
+Data Transforms (Train):
+  - T.Resize((224, 224))
+  - T.RandomHorizontalFlip()
+  - T.RandAugment()
+  - T.ToTensor()
+  - T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+Data Transforms (Val):
+  - T.Resize((224, 224))
+  - T.ToTensor()
+  - T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+--------------------------------------------------------------------------------
+2. ARCHITECTURE HYPERPARAMETERS (JointViTMAE)
+--------------------------------------------------------------------------------
+Total Model Parameters : 3,465,088 (~3.47M trainable parameters)
+
+Patch Projection (ConvStemPatchEmbed):
+  - Stem Architecture  : 3-layer Hierarchical Convolutional Stem
+      * Conv2d(3 -> 48, kernel_size=3, stride=2, padding=1, bias=False) + BN + GELU
+      * Conv2d(48 -> 96, kernel_size=3, stride=2, padding=1, bias=False) + BN + GELU
+      * Conv2d(96 -> 192, kernel_size=3, stride=4, padding=1)
+  - Number of Patches  : 196 (14 x 14 grid)
+  - Patch Dimensions   : 16 x 16 pixels per patch (768 raw pixel values)
+
+Transformer Encoder:
+  - Embedding Dim (d_model)   : 192
+  - Depth (Transformer Layers): 6
+  - Attention Heads (nhead)   : 6
+  - Feedforward Dim (FFN)     : 768 (4 x d_model)
+  - Activation Function       : GELU
+  - Encoder Dropout           : 0.1
+  - Special Tokens            : [CLS] Token (learned, dim 192)
+  - Positional Embedding      : 1D Learned Positional Embeddings (dim 192)
+
+MAE Transformer Decoder:
+  - Projection Layer          : Linear(192 -> 128)
+  - Decoder Embedding Dim     : 128
+  - Decoder Depth             : 2
+  - Decoder Attention Heads   : 4
+  - Decoder Feedforward Dim   : 512 (4 x decoder_embed_dim)
+  - Decoder Activation        : GELU
+  - Mask Token                : Learned Parameter (dim 128)
+  - Decoder Prediction Head   : Linear(128 -> 768)
+
+Classification Head:
+  - Head Architecture         : Linear(192 -> 16)
+
+--------------------------------------------------------------------------------
+3. TRAINING & OPTIMIZATION CONFIGURATION
+--------------------------------------------------------------------------------
+Total Epochs            : 100
+Mask Ratio (Training)   : 0.75 (75% masked / 25% kept)
+Mask Ratio (Validation) : 0.00 (100% visible patches)
+
+Optimizer               : AdamW
+  - Base Learning Rate  : 5e-4
+  - Weight Decay        : 0.05
+
+Learning Rate Scheduler : LambdaLR (Linear Warmup + Cosine Annealing)
+  - Warmup Epochs       : 5 (Linear scaling from 0 to base LR)
+  - Decay Strategy      : Cosine Annealing over remaining 95 epochs
+
+--------------------------------------------------------------------------------
+4. LOSS FUNCTION & DUAL-OBJECTIVE FORMULATION
+--------------------------------------------------------------------------------
+Classification Loss (L_cls) : CrossEntropyLoss(label_smoothing=0.1)
+Reconstruction Loss (L_recon): Mean Squared Error (MSE) over masked patches
+Target Normalization         : Per-patch zero-mean, unit-variance normalization
+Reconstruction Loss Weight   : lambda_recon = 0.5
+
+Total Loss Formulation:
+  L_total = L_cls + (lambda_recon * L_recon)
+
+--------------------------------------------------------------------------------
+5. EXPERIMENTAL RESULTS SUMMARY
+--------------------------------------------------------------------------------
+Supervised Baseline Val Accuracy : 41.88%
+Pure MAE + Fine-Tuning Accuracy : 66.87%
+Joint Supervised-SSL Accuracy   : 80.21% (Achieved at Epoch 100)
+================================================================================
